@@ -18,7 +18,7 @@ export function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const GOOGLE_AQ_KEY = import.meta.env.VITE_GOOGLE_AQ_API_KEY as string;
-  const ML_API_URL = (import.meta.env.VITE_ML_API_URL as string) || 'https://aura-ml-api.onrender.com';
+  const ML_API_URL = (import.meta.env.VITE_ML_API_URL as string) || 'https://aura-air-api.onrender.com';
 
   const fetchData = async (lat: number, lon: number) => {
     setCoords({ lat, lon });

@@ -261,7 +261,7 @@ function getCityFilterCategory(aqi: number): FilterCategory {
 }
 
 const GOOGLE_AQ_KEY = import.meta.env.VITE_GOOGLE_AQ_API_KEY as string;
-const ML_API_URL = (import.meta.env.VITE_ML_API_URL as string) || 'https://aura-ml-api.onrender.com';
+const ML_API_URL = (import.meta.env.VITE_ML_API_URL as string) || 'https://aura-air-api.onrender.com';
 
 
 // Fetch AQI from Google Air Quality API

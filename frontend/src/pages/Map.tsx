@@ -1192,7 +1192,7 @@ ${riskMap[level]}
       className="min-h-screen bg-bg text-text-primary relative overflow-hidden"
     >
       {/* Search bar */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-[1000] flex gap-3 pointer-events-none">
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-[1100] flex gap-3 pointer-events-none">
         <div className="flex-1 relative pointer-events-auto">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
           <input
@@ -1229,7 +1229,7 @@ ${riskMap[level]}
       </div>
 
       {/* AQI Filter chips */}
-      <div className="absolute top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-[1000] flex gap-2 overflow-x-auto pb-2 scrollbar-hide pointer-events-none">
+      <div className="absolute top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-[900] flex gap-2 overflow-x-auto pb-2 scrollbar-hide pointer-events-none">
 
         {/* Heatmap toggle */}
         <button

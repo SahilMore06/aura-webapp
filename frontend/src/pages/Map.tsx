@@ -1373,7 +1373,7 @@ ${riskMap[level]}
 
       {/* Heatmap Legend */}
       {showHeatmap && (
-        <div className="absolute bottom-24 left-6 z-[1000] bg-surface/80 backdrop-blur-xl border border-stroke rounded-2xl p-3 pointer-events-auto">
+        <div className="absolute bottom-28 left-6 z-[1000] bg-surface/80 backdrop-blur-xl border border-stroke rounded-2xl p-3 pointer-events-auto">
           <div className="text-[10px] text-muted uppercase tracking-widest mb-2">AQI Heatmap</div>
           <div className="flex items-center gap-1">
             {[
@@ -1392,7 +1392,21 @@ ${riskMap[level]}
         </div>
       )}
 
-      {/* Leaflet Map */}
+      {/* Leaflet Map — push attribution above dock bar */}
+      <style>{`
+        .leaflet-control-attribution {
+          margin-bottom: 80px !important;
+          background: rgba(10,10,15,0.7) !important;
+          color: rgba(255,255,255,0.5) !important;
+          backdrop-filter: blur(8px);
+          border-radius: 8px 0 0 0 !important;
+          padding: 4px 8px !important;
+          font-size: 10px !important;
+        }
+        .leaflet-control-attribution a {
+          color: rgba(0,212,170,0.7) !important;
+        }
+      `}</style>
       <div className="absolute inset-0 z-0">
         <MapContainer
           center={[22.5937, 80.9629]}

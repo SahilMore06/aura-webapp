@@ -1191,8 +1191,8 @@ ${riskMap[level]}
       exit={{ opacity: 0, y: -20 }}
       className="min-h-screen bg-bg text-text-primary relative overflow-hidden"
     >
-      {/* Search bar */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-[1100] flex gap-3 pointer-events-none">
+      {/* Search bar — hidden when city panel is open */}
+      {!selectedCity && <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-[1100] flex gap-3 pointer-events-none">
         <div className="flex-1 relative pointer-events-auto">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
           <input
@@ -1226,10 +1226,10 @@ ${riskMap[level]}
           <Navigation className="w-5 h-5 text-[#00D4AA]" />
           <span className="text-sm font-medium hidden sm:block">Explore Any City</span>
         </button>
-      </div>
+      </div>}
 
-      {/* AQI Filter chips */}
-      <div className="absolute top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-[900] flex gap-2 overflow-x-auto pb-2 scrollbar-hide pointer-events-none">
+      {/* AQI Filter chips — hidden when city panel is open */}
+      {!selectedCity && <div className="absolute top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-[900] flex gap-2 overflow-x-auto pb-2 scrollbar-hide pointer-events-none">
 
         {/* Heatmap toggle */}
         <button
@@ -1274,7 +1274,7 @@ ${riskMap[level]}
             <span className="text-xs text-muted">Loading cities…</span>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Spoof GPS Panel */}
       <AnimatePresence>
@@ -1475,16 +1475,25 @@ ${riskMap[level]}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="absolute top-0 right-0 w-full max-w-sm h-full bg-bg/96 backdrop-blur-2xl border-l border-stroke z-[1000] p-6 flex flex-col overflow-y-auto"
+            className="absolute top-0 right-0 w-full max-w-sm h-full bg-bg/96 backdrop-blur-2xl border-l border-stroke z-[1200] p-6 flex flex-col overflow-y-auto"
           >
-            <button onClick={() => setSelectedCity(null)} className="absolute top-6 right-6 text-muted hover:text-text-primary z-10">
-              <X className="w-5 h-5" />
+            {/* Back button */}
+            <button
+              onClick={() => setSelectedCity(null)}
+              className="flex items-center gap-2 text-muted hover:text-text-primary z-10 group mb-2"
+            >
+              <div className="p-1.5 rounded-xl bg-surface border border-stroke group-hover:border-[#00D4AA]/40 group-hover:bg-[#00D4AA]/10 transition-all">
+                <ChevronRight className="w-4 h-4 rotate-180" />
+              </div>
+              <span className="text-sm font-medium">Back to Map</span>
             </button>
+
+            <div className="flex items-center gap-2 absolute top-6 right-6 z-10">
 
             <button
               onClick={downloadReport}
               title={downloadState === 'success' ? 'Downloaded!' : 'Download Full Report'}
-              className={`absolute top-5 right-14 z-10 p-1.5 rounded-xl border transition-all duration-300 ${
+              className={`p-1.5 rounded-xl border transition-all duration-300 ${
                 downloadState === 'success'
                   ? 'bg-green-500/20 border-green-400/50 scale-110'
                   : downloadState === 'loading'
@@ -1503,6 +1512,7 @@ ${riskMap[level]}
                 <Download className="w-4 h-4 text-[#00D4AA]" />
               )}
             </button>
+            </div>
 
             {selectedCity.spoofed && (
               <div className="flex items-center gap-2 mb-3 bg-[#00D4AA]/10 border border-[#00D4AA]/20 rounded-xl px-3 py-2">
@@ -1511,7 +1521,7 @@ ${riskMap[level]}
               </div>
             )}
 
-            <div className="mt-8">
+            <div className="mt-3">
               <h2 className="text-3xl font-display italic mb-1">{selectedCity.name}</h2>
               <div className="flex items-center gap-2 mb-1">
                 <MapPin className="w-4 h-4 text-[#00D4AA]" />

@@ -1,0 +1,34 @@
+# ── OS ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Frontend ──────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env*.local
+frontend/.next/
+frontend/.vercel/
+
+# ── Backend ───────────────────────────────────
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.env
+
+# ── Training files (NOT needed in production) ─
+backend/city_health_aqi_dataset.csv
+backend/global_air_pollution_dataset.csv
+backend/dataset_meta.json
+backend/generate_dataset.py
+backend/train_model.py
+backend/train_health_model.py
+backend/model_meta.json 20-46-46-561.json
+
+# ── IDE ───────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Planning (internal) ──────────────────────
+.planning/

@@ -1,0 +1,41 @@
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import {defineConfig, loadEnv} from 'vite';
+
+export default defineConfig(({mode}) => {
+  const env = loadEnv(mode, '.', '');
+  return {
+    plugins: [react(), tailwindcss()],
+    define: {
+      'process.env.GOOGLE_AQ_API_KEY': JSON.stringify(env.GOOGLE_AQ_API_KEY || ""),
+    },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+    server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
+      hmr: process.env.DISABLE_HMR !== 'true',
+    },
+    build: {
+      // Code splitting for better loading performance
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom', 'react-router-dom'],
+            charts: ['recharts', 'd3'],
+            maps: ['leaflet', 'react-leaflet'],
+            animation: ['motion', 'gsap'],
+          },
+        },
+      },
+      // Increase chunk warning limit (maps/charts are inherently large)
+      chunkSizeWarningLimit: 600,
+      // Generate source maps for easier debugging in production
+      sourcemap: false,
+    },
+  };
+});

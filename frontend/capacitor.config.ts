@@ -14,7 +14,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 // ── URLs ─────────────────────────────────────────────────────
 // Replace with your actual Vercel production URL after first deploy
-const VERCEL_URL  = 'https://aura-air.vercel.app';
+const VERCEL_URL  = 'https://auraweapp.vercel.app';
 const NETLIFY_URL = 'https://aura-air-quality.netlify.app';  // fallback
 
 // Set to true for local dev, false for production APK build

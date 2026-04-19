@@ -129,3 +129,86 @@ jobs:
           name: aura-debug-apk
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 3: Build iOS IPA (macOS runner — only on push to main)
+  # Produces an unsigned IPA for simulator / TestFlight distribution.
+  # WebView loads auraweapp.vercel.app — instant updates without rebuild.
+  # ─────────────────────────────────────────────────────────────
+  build-ios:
+    name: 🍎 Build iOS (WebView)
+    runs-on: macos-latest
+    needs: build-web
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Build web (for Capacitor sync)
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+
+      - name: Sync Capacitor iOS
+        working-directory: frontend
+        run: npx cap sync ios
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Install CocoaPods dependencies
+        working-directory: frontend/ios/App
+        run: pod install --repo-update
+
+      - name: Build iOS (unsigned — for simulator/testing)
+        working-directory: frontend/ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            clean build
+
+      - name: Package .app into .ipa
+        working-directory: frontend/ios/App
+        run: |
+          mkdir -p Payload
+          cp -r "build/Build/Products/Debug-iphonesimulator/App.app" Payload/
+          zip -r AURA-iOS-Simulator.ipa Payload
+          rm -rf Payload
+
+      - name: Upload IPA to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: "AURA APK — Build #${{ github.run_number }}"
+          files: frontend/ios/App/AURA-iOS-Simulator.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-ios-simulator-ipa
+          path: frontend/ios/App/AURA-iOS-Simulator.ipa
+          retention-days: 30

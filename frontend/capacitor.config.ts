@@ -70,6 +70,17 @@ const config: CapacitorConfig = {
     webContentsDebuggingEnabled: IS_DEV,  // only debug in dev
     backgroundColor: '#0A0F1E',
   },
+
+  ios: {
+    // Dark background while WebView loads
+    backgroundColor: '#0A0F1E',
+    // Allow scrolling to handle content larger than viewport
+    scrollEnabled: true,
+    // Use WKWebView limitsNavigationsToAppBoundDomains for security
+    limitsNavigationsToAppBoundDomains: false,
+    // Preferred content mode
+    preferredContentMode: 'mobile',
+  },
 };
 
 export default config;

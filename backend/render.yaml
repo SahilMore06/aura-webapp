@@ -3,11 +3,25 @@ services:
     name: aura-ml-api
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn predict:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
+    startCommand: gunicorn predict:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --preload
+    healthCheckPath: /health
+    plan: free
     envVars:
       - key: FLASK_ENV
         value: production
       - key: CORS_ORIGINS
         sync: false
-    healthCheckPath: /
-    plan: free
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      # Render automatically sets RENDER_EXTERNAL_URL — used for self-ping keep-alive
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          type: web
+          name: aura-ml-api
+          property: host

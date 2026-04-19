@@ -1,176 +1,380 @@
+/**
+ * AURA — Auth Page
+ * Handles: Sign In, Sign Up, Forgot Password, Google OAuth, GitHub OAuth
+ * All errors are mapped to human-readable messages.
+ * Activity tracking fires on login/signup success.
+ */
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Github, Chrome, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Github, Chrome, AlertCircle, Eye, EyeOff, ArrowLeft, User, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
+import { activityLogger } from '../lib/activityLogger';
+
+// ── Human-readable error map ──────────────────────────────────
+const ERROR_MAP: Record<string, string> = {
+  'Invalid login credentials':        'Incorrect email or password. Please try again.',
+  'Email not confirmed':              'Please verify your email first. Check your inbox.',
+  'User already registered':          'An account with this email already exists. Sign in instead.',
+  'Password should be at least 6 characters': 'Password must be at least 6 characters.',
+  'signup_disabled':                  'New signups are currently disabled.',
+  'over_email_send_rate_limit':       'Too many emails sent. Please wait a minute and try again.',
+  'invalid_email':                    'Please enter a valid email address.',
+  'weak_password':                    'Password is too weak. Use letters, numbers, and symbols.',
+};
+
+function humanError(raw: string): string {
+  for (const [key, msg] of Object.entries(ERROR_MAP)) {
+    if (raw.toLowerCase().includes(key.toLowerCase())) return msg;
+  }
+  return raw || 'Something went wrong. Please try again.';
+}
+
+// ── Password strength ─────────────────────────────────────────
+function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
+  if (!pw) return { score: 0, label: '', color: '' };
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const map = [
+    { label: 'Weak',   color: '#FF5252' },
+    { label: 'Fair',   color: '#FF9E40' },
+    { label: 'Good',   color: '#FFE57F' },
+    { label: 'Strong', color: '#00D4AA' },
+  ];
+  const entry = map[Math.min(score, 3)];
+  return { score, ...entry };
+}
+
+type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export function Auth() {
-  const [isSignIn, setIsSignIn] = useState(true);
+  const [mode, setMode] = useState<AuthMode>('signin');
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]           = useState('');
+  const [password, setPassword]     = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [success, setSuccess]       = useState<string | null>(null);
+  const [loading, setLoading]       = useState(false);
 
+  const pwStrength = getPasswordStrength(password);
+
+  // ── Reset state on mode switch ───────────────────────────────
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setError(null);
+    setSuccess(null);
+    setPassword('');
+  };
+
+  // ── Email / Password auth ────────────────────────────────────
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
 
     try {
-      if (isSignIn) {
-        // Admin Mock Login — bypasses Supabase for demo/local use
-        if (email === 'admin@aura.ai' && password === 'AuraAdmin2024') {
-          const mockUser = { id: 'admin-mock-user', email: 'admin@aura.ai', role: 'admin' } as any;
-          const mockSession = { user: mockUser, access_token: 'admin-mock-token' } as any;
-
-          useAuthStore.getState().setAdminMock(true);
-          useAuthStore.getState().setUser(mockUser);
-          useAuthStore.getState().setSession(mockSession);
-          useAuthStore.getState().setLoading(false);
-
-          navigate('/dashboard');
-          return;
-        }
-
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
+      // ── ADMIN MOCK LOGIN (demo-only, no Supabase call) ──
+      if (mode === 'signin' && email === 'admin@aura.ai' && password === 'AuraAdmin2024') {
+        const mockUser = { id: 'admin-mock-user', email: 'admin@aura.ai', role: 'admin' } as any;
+        const mockSession = { user: mockUser, access_token: 'admin-mock-token' } as any;
+        useAuthStore.getState().setAdminMock(true);
+        useAuthStore.getState().setUser(mockUser);
+        useAuthStore.getState().setSession(mockSession);
+        useAuthStore.getState().setLoading(false);
+        activityLogger.disable(); // don't log admin mock activity to DB
         navigate('/dashboard');
-      } else {
-        const { error } = await supabase.auth.signUp({
+        return;
+      }
+
+      if (mode === 'signin') {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        activityLogger.log('login', { metadata: { method: 'email' } });
+        // loadProfile is triggered by the auth state change in App.tsx
+        navigate('/dashboard');
+
+      } else if (mode === 'signup') {
+        if (password.length < 6) {
+          throw new Error('Password should be at least 6 characters');
+        }
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: {
-              display_name: displayName,
-            },
+            data: { display_name: displayName },
+            // Redirect after email confirmation (set in Supabase dashboard too)
+            emailRedirectTo: `${window.location.origin}/dashboard`,
           },
         });
         if (error) throw error;
-        navigate('/registration');
+
+        // Check if confirmation email was sent
+        if (data.session) {
+          // Email confirmations disabled — user is immediately active → OTP verify
+          activityLogger.log('signup', { metadata: { method: 'email', display_name: displayName } });
+          navigate(`/verify-otp?purpose=signup_verify&email=${encodeURIComponent(email)}`);
+        } else {
+          // Email confirmation required via Supabase link
+          setSuccess('Check your inbox! We sent you a confirmation link.');
+        }
+
+      } else if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth?mode=reset`,
+        });
+        if (error) throw error;
+        setSuccess('Password reset email sent. Check your inbox.');
       }
+
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(humanError(err.message || ''));
     } finally {
       setLoading(false);
     }
   };
 
+  // ── OAuth ────────────────────────────────────────────────────
+  const handleOAuth = async (provider: 'google' | 'github') => {
+    setError(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+        scopes: provider === 'github' ? 'user:email' : undefined,
+      },
+    });
+    if (error) setError(humanError(error.message));
+    else activityLogger.log('oauth_login', { metadata: { provider } });
+  };
+
+  const modeTitle = { signin: 'Welcome back', signup: 'Create an account', forgot: 'Reset password' };
+  const modeSub   = { signin: 'Sign in to your account', signup: 'Join AURA today', forgot: 'Enter your email to receive a reset link' };
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, y: -20 }}
       className="min-h-screen w-full bg-bg flex items-center justify-center p-4 relative overflow-hidden"
     >
-      {/* Subtle particle field background (simplified with CSS) */}
+      {/* Background dots */}
       <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px]" />
+
+      {/* Ambient glow */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-[#00D4AA] opacity-5 blur-3xl pointer-events-none" />
 
       <motion.div
         initial={{ y: 40, opacity: 0, filter: 'blur(10px)' }}
         animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className="w-full max-w-md bg-surface backdrop-blur-2xl border border-stroke rounded-3xl p-8 relative z-10"
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+        className="w-full max-w-md bg-surface backdrop-blur-2xl border border-stroke rounded-3xl p-8 relative z-10 shadow-2xl"
       >
+        {/* Back button (forgot password mode) */}
+        {mode === 'forgot' && (
+          <button
+            onClick={() => switchMode('signin')}
+            className="flex items-center gap-2 text-muted hover:text-text-primary text-sm mb-6 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to sign in
+          </button>
+        )}
+
+        {/* Header */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-14 h-14 rounded-full accent-gradient flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(0,212,170,0.3)]">
             <span className="italic font-display text-2xl text-bg">A</span>
           </div>
           <h1 className="text-3xl font-display italic text-text-primary mb-2">
-            {isSignIn ? 'Welcome back' : 'Create an account'}
+            {modeTitle[mode]}
           </h1>
-          <p className="text-muted text-center">
-            {isSignIn ? 'Sign in to your account' : 'Join AURA today'}
-          </p>
+          <p className="text-muted text-center text-sm">{modeSub[mode]}</p>
         </div>
 
-        <div className="space-y-3 mb-6">
-          <button className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-stroke text-text-primary hover:bg-stroke/50 transition-colors">
-            <Chrome className="w-5 h-5" />
-            Continue with Google
-          </button>
-          <button className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-stroke text-text-primary hover:bg-stroke/50 transition-colors">
-            <Github className="w-5 h-5" />
-            Continue with GitHub
-          </button>
-        </div>
+        {/* OAuth (only on signin/signup) */}
+        {mode !== 'forgot' && (
+          <>
+            <div className="space-y-3 mb-6">
+              <button
+                onClick={() => handleOAuth('google')}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-stroke text-text-primary hover:bg-stroke/50 hover:border-[#00D4AA]/40 transition-all font-medium"
+              >
+                <Chrome className="w-5 h-5" /> Continue with Google
+              </button>
+              <button
+                onClick={() => handleOAuth('github')}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-stroke text-text-primary hover:bg-stroke/50 hover:border-[#00D4AA]/40 transition-all font-medium"
+              >
+                <Github className="w-5 h-5" /> Continue with GitHub
+              </button>
+            </div>
 
-        <div className="flex items-center gap-4 mb-6">
-          <div className="h-[1px] flex-1 bg-stroke" />
-          <span className="text-xs text-muted uppercase tracking-wider">or continue with email</span>
-          <div className="h-[1px] flex-1 bg-stroke" />
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start flex-row gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
-            <p className="text-sm text-red-200">{error}</p>
-          </div>
+            <div className="flex items-center gap-4 mb-6">
+              <div className="h-[1px] flex-1 bg-stroke" />
+              <span className="text-xs text-muted uppercase tracking-wider">or continue with email</span>
+              <div className="h-[1px] flex-1 bg-stroke" />
+            </div>
+          </>
         )}
 
+        {/* Error / Success banners */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3"
+            >
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-red-200">{error}</p>
+            </motion.div>
+          )}
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mb-4 p-3 bg-[#00D4AA]/10 border border-[#00D4AA]/20 rounded-xl flex items-start gap-3"
+            >
+              <CheckCircle className="w-5 h-5 text-[#00D4AA] shrink-0 mt-0.5" />
+              <p className="text-sm text-[#00D4AA]">{success}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Form */}
         <form onSubmit={handleAuth} className="space-y-4">
-          {!isSignIn && (
+          {/* Display name (signup only) */}
+          {mode === 'signup' && (
             <div className="relative">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                <User className="w-5 h-5 text-muted" />
+              </div>
               <input
+                id="displayName"
                 type="text"
                 placeholder="Display Name"
-                className="w-full bg-bg border border-stroke rounded-xl px-4 py-3 text-text-primary placeholder:text-muted focus:outline-none focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA] transition-all"
+                autoComplete="name"
+                className="w-full bg-bg border border-stroke rounded-xl pl-12 pr-4 py-3 text-text-primary placeholder:text-muted focus:outline-none focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA] transition-all"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 required
               />
             </div>
           )}
+
+          {/* Email */}
           <div className="relative">
             <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
               <Mail className="w-5 h-5 text-muted" />
             </div>
             <input
+              id="email"
               type="email"
               placeholder="Email address"
+              autoComplete={mode === 'signup' ? 'email' : 'username'}
               className="w-full bg-bg border border-stroke rounded-xl pl-12 pr-4 py-3 text-text-primary placeholder:text-muted focus:outline-none focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA] transition-all"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-              <Lock className="w-5 h-5 text-muted" />
-            </div>
-            <input
-              type="password"
-              placeholder="Password"
-              className="w-full bg-bg border border-stroke rounded-xl pl-12 pr-4 py-3 text-text-primary placeholder:text-muted focus:outline-none focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA] transition-all"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
 
+          {/* Password (hidden on forgot mode) */}
+          {mode !== 'forgot' && (
+            <div className="relative">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                <Lock className="w-5 h-5 text-muted" />
+              </div>
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                className="w-full bg-bg border border-stroke rounded-xl pl-12 pr-12 py-3 text-text-primary placeholder:text-muted focus:outline-none focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA] transition-all"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={mode === 'signup' ? 6 : undefined}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-4 flex items-center text-muted hover:text-text-primary transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          )}
+
+          {/* Password strength (signup only) */}
+          {mode === 'signup' && password && (
+            <div className="space-y-1">
+              <div className="flex gap-1">
+                {[0,1,2,3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-1 flex-1 rounded-full transition-all duration-300"
+                    style={{ backgroundColor: i < pwStrength.score ? pwStrength.color : 'var(--stroke)' }}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-muted" style={{ color: pwStrength.color }}>
+                {pwStrength.label}
+              </p>
+            </div>
+          )}
+
+          {/* Forgot password link (signin only) */}
+          {mode === 'signin' && (
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => switchMode('forgot')}
+                className="text-xs text-muted hover:text-[#00D4AA] transition-colors"
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
+
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl accent-gradient text-bg font-semibold hover:opacity-90 transition-opacity mt-2 disabled:opacity-50"
+            id="auth-submit-btn"
+            className="w-full py-3 rounded-xl accent-gradient text-bg font-semibold hover:opacity-90 transition-opacity mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Processing...' : isSignIn ? 'Sign In' : 'Create Account'}
+            {loading
+              ? 'Processing…'
+              : mode === 'signin' ? 'Sign In'
+              : mode === 'signup' ? 'Create Account'
+              : 'Send Reset Link'}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsSignIn(!isSignIn)}
-            className="text-sm text-muted hover:text-text-primary transition-colors"
-          >
-            {isSignIn ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
-          </button>
-        </div>
+        {/* Mode switcher */}
+        {mode !== 'forgot' && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+              className="text-sm text-muted hover:text-text-primary transition-colors"
+            >
+              {mode === 'signin'
+                ? "Don't have an account? Sign up"
+                : 'Already have an account? Sign in'}
+            </button>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

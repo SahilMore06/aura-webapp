@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Config for AURA Air Quality
+  Allows HTTPS to all domains (needed for external APIs: Google AQ, OpenStreetMap,
+  Open-Meteo, ipapi.co, Supabase, Render ML backend, Nominatim geocoding)
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

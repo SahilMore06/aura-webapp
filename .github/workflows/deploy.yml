@@ -1,0 +1,131 @@
+name: 🤖 AURA — Auto Build & Deploy
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# Cancel in-progress runs on new push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # JOB 1: Build frontend (Vite)
+  # Vercel & Netlify pick this up automatically via their GitHub
+  # integrations — this job just validates the build is clean.
+  # ─────────────────────────────────────────────────────────────
+  build-web:
+    name: 🌐 Build Web (Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: frontend/dist
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 2: Build APK (only on push to main, not on PRs)
+  # Uses the WebView approach — APK loads VERCEL_URL at runtime.
+  # You only need to rebuild if you change native Capacitor code.
+  # ─────────────────────────────────────────────────────────────
+  build-apk:
+    name: 📱 Build APK (WebView)
+    runs-on: ubuntu-latest
+    needs: build-web
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Java 17 (required for Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Build web (for Capacitor sync)
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+
+      - name: Sync Capacitor
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Make Gradle executable
+        working-directory: frontend/android
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/master')
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: "AURA APK — Build #${{ github.run_number }}"
+          body: |
+            🚀 Auto-built from commit ${{ github.sha }}
+            📅 ${{ github.event.head_commit.timestamp }}
+            💬 ${{ github.event.head_commit.message }}
+
+            **This APK loads the live Vercel deployment — updates instantly without reinstalling.**
+          files: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-debug-apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

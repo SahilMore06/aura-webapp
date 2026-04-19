@@ -3,6 +3,9 @@ from flask_cors import CORS
 import pickle
 import json
 import os
+import threading
+import time
+import urllib.request
 
 app = Flask(__name__)
 
@@ -12,6 +15,16 @@ cors_origins = os.environ.get('CORS_ORIGINS', '*')
 if cors_origins != '*':
     cors_origins = [o.strip() for o in cors_origins.split(',')]
 CORS(app, origins=cors_origins)
+
+# ── Register Blueprints ───────────────────────────────────────
+try:
+    from otp_service import otp_bp
+    app.register_blueprint(otp_bp)
+    print("✅ OTP service registered at /api/otp/*")
+except ImportError as e:
+    print(f"⚠️  OTP service not loaded (missing deps?): {e}")
+except Exception as e:
+    print(f"⚠️  OTP service error: {e}")
 
 # ─────────────────────────────────────────────
 # Load ALL model files on startup
@@ -290,7 +303,50 @@ def dataset_stats():
 
 
 # ─────────────────────────────────────────────
-# Run server
+# Health check endpoint (used by Render + keep-alive)
+# ─────────────────────────────────────────────
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Lightweight health check — keeps Render free tier awake."""
+    return jsonify({"status": "ok", "service": "AURA ML API"}), 200
+
+
+# ─────────────────────────────────────────────
+# Keep-alive: self-ping every 10 min to prevent
+# Render free tier 15-min sleep timeout
+# ─────────────────────────────────────────────
+def keep_alive():
+    """Runs in background thread — pings /health every 10 minutes."""
+    # Wait 30s after startup before first ping
+    time.sleep(30)
+    while True:
+        try:
+            render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+            if render_url:
+                url = f"{render_url}/health"
+                req = urllib.request.Request(url, headers={"User-Agent": "AURA-KeepAlive/1.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    print(f"[keep-alive] Pinged {url} → {resp.status}")
+            else:
+                print("[keep-alive] RENDER_EXTERNAL_URL not set — skipping ping")
+        except Exception as e:
+            print(f"[keep-alive] Ping failed (non-critical): {e}")
+        # Sleep 10 minutes between pings
+        time.sleep(600)
+
+
+# ─────────────────────────────────────────────
+# Start keep-alive at module level so gunicorn
+# triggers it (gunicorn doesn't run __main__)
+# ─────────────────────────────────────────────
+if os.environ.get("FLASK_ENV") == "production":
+    _ka_thread = threading.Thread(target=keep_alive, daemon=True)
+    _ka_thread.start()
+    print("✅ Keep-alive thread started (pings /health every 10 min)")
+
+
+# ─────────────────────────────────────────────
+# Run server (local dev only)
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Bell, MapPin, RefreshCw, Info, Wind, Droplets, ThermometerSun, Loader2, Shield, Activity, Leaf, CheckCircle, Flame, Factory, Car, AlertTriangle, ShieldAlert, Skull, Sparkles } from 'lucide-react';
+import { Bell, MapPin, Navigation, RefreshCw, Info, Wind, Droplets, ThermometerSun, Loader2, Shield, Activity, Leaf, CheckCircle, Flame, Factory, Car, AlertTriangle, ShieldAlert, Skull, Sparkles } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { generateDashboardIEEE } from '../utils/ieeeDashboardReport';
 
@@ -8,7 +8,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
-  const [locationName, setLocationName] = useState('Mumbai, Maharashtra');
+  const [locationName, setLocationName] = useState('Detecting location…');
   const [trendMetric, setTrendMetric] = useState('pm25');
   const [mlCities, setMlCities] = useState<any>(null);
   const [alertActive, setAlertActive] = useState(false);
@@ -16,6 +16,7 @@ export function Dashboard() {
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('just now');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<'detecting' | 'granted' | 'denied' | 'ip'>('detecting');
 
   const GOOGLE_AQ_KEY = import.meta.env.VITE_GOOGLE_AQ_API_KEY as string;
   const ML_API_URL = (import.meta.env.VITE_ML_API_URL as string) || 'https://aura-air-api.onrender.com';
@@ -101,19 +102,34 @@ export function Dashboard() {
         googleRaw: googleJson, // keep full response for report generation
       });
 
-      // ── Reverse geocode for location name ──
+      // ── Reverse geocode for location name using Nominatim ──
+      // This gives the REAL city from coordinates — far more accurate than any IP service
       try {
-        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
         const geoJson = await geoRes.json();
         if (geoJson.address) {
-          const city = geoJson.address.city || geoJson.address.town || geoJson.address.village || geoJson.address.county || '';
-          const state = geoJson.address.state || '';
+          const a = geoJson.address;
+          // Priority order: most specific first
+          const city =
+            a.city ||
+            a.town ||
+            a.municipality ||
+            a.city_district ||
+            a.suburb ||
+            a.village ||
+            a.district ||
+            a.county ||
+            '';
+          const state = a.state || '';
           if (city || state) {
             setLocationName(`${city}${city && state ? ', ' : ''}${state}`);
           }
         }
       } catch (e) {
-        console.error('Reverse geocoding failed', e);
+        console.warn('Reverse geocoding failed', e);
       }
       
     } catch (err) {
@@ -142,38 +158,57 @@ export function Dashboard() {
       .catch(err => console.error('Failed to load ML Cities', err));
   }, []);
 
+  // ── IP-based geolocation fallback (works on HTTP / when GPS is denied) ──
+  const fetchByIp = async (): Promise<{ lat: number; lon: number; city: string }> => {
+    const res = await fetch('https://ipapi.co/json/');
+    const json = await res.json();
+    return { lat: json.latitude, lon: json.longitude, city: `${json.city}, ${json.region}` };
+  };
+
+  // ── Request GPS from the browser ──
+  const requestGps = (onSuccess: (lat: number, lon: number) => void, onFail: () => void) => {
+    if (!navigator.geolocation) { onFail(); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { onSuccess(pos.coords.latitude, pos.coords.longitude); },
+      (err) => { console.warn('GPS denied/unavailable:', err.message); onFail(); },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
   useEffect(() => {
-    const defaultLat = 28.7041;
-    const defaultLon = 77.1025;
-    
-    const initFetch = (lat: number, lon: number) => {
-      fetchData(lat, lon);
-
-      // Auto-refresh every 5 minutes
-      const interval = setInterval(() => {
-        fetchData(lat, lon);
-      }, 5 * 60 * 1000);
-
-      return interval;
-    };
-
     let intervalId: ReturnType<typeof setInterval>;
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          intervalId = initFetch(position.coords.latitude, position.coords.longitude);
-        },
-        (error) => {
-          console.warn('Geolocation error, using default location', error);
-          intervalId = initFetch(defaultLat, defaultLon);
+    const startFetch = (lat: number, lon: number) => {
+      fetchData(lat, lon);
+      intervalId = setInterval(() => fetchData(lat, lon), 5 * 60 * 1000);
+    };
+
+    setLocationStatus('detecting');
+
+    requestGps(
+      (lat, lon) => {
+        setLocationStatus('granted');
+        startFetch(lat, lon);
+      },
+      async () => {
+        // GPS denied → try IP geolocation for COORDINATES ONLY
+        // (Never use ip.city — it's ISP-registered location, not your physical location)
+        try {
+          const ip = await fetchByIp();
+          setLocationStatus('ip');
+          // Keep showing 'Detecting…' — Nominatim inside fetchData will set real city name
+          startFetch(ip.lat, ip.lon);
+        } catch {
+          // Last resort: Mumbai coords
+          setLocationStatus('denied');
+          setLocationName('Mumbai, Maharashtra');
+          startFetch(19.0760, 72.8777);
         }
-      );
-    } else {
-      intervalId = initFetch(defaultLat, defaultLon);
-    }
+      }
+    );
 
     return () => clearInterval(intervalId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -304,9 +339,37 @@ export function Dashboard() {
           animate={{ y: 0, opacity: 1 }}
           className="flex items-center justify-between"
         >
-          <div className="flex items-center gap-3 bg-surface border border-stroke rounded-full px-4 py-2 backdrop-blur-md">
-            <MapPin className="w-4 h-4 text-[#00D4AA]" />
-            <span className="font-medium text-sm">{locationName}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-3 bg-surface border border-stroke rounded-full px-4 py-2 backdrop-blur-md">
+              {locationStatus === 'detecting' 
+                ? <Loader2 className="w-4 h-4 text-[#00D4AA] animate-spin" />
+                : <MapPin className="w-4 h-4 text-[#00D4AA]" />
+              }
+              <span className="font-medium text-sm">
+                {locationStatus === 'detecting' ? 'Detecting…' : locationName}
+              </span>
+              {locationStatus === 'ip' && (
+                <span className="text-[9px] text-muted bg-bg border border-stroke rounded-full px-2 py-0.5">IP</span>
+              )}
+            </div>
+            {(locationStatus === 'denied' || locationStatus === 'ip') && (
+              <button
+                onClick={() => {
+                  setLocationStatus('detecting');
+                  if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => { setLocationStatus('granted'); fetchData(pos.coords.latitude, pos.coords.longitude); },
+                      () => setLocationStatus('denied'),
+                      { enableHighAccuracy: true, timeout: 10000 }
+                    );
+                  }
+                }}
+                className="flex items-center gap-1.5 text-xs text-[#00D4AA] bg-surface border border-[#00D4AA]/30 rounded-full px-3 py-1.5 hover:bg-[#00D4AA]/10 transition-colors"
+              >
+                <Navigation className="w-3 h-3" />
+                Use GPS
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <button 

@@ -4,31 +4,53 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- SEO -->
+    <!-- ── SEO ─────────────────────────────────────────────── -->
     <title>AURA — AI-Powered Air Quality Intelligence</title>
     <meta name="description" content="AURA is an AI-powered air quality monitoring platform delivering real-time AQI data, ML-driven health risk predictions, and smart pollution control strategies for cities worldwide." />
     <meta name="keywords" content="air quality, AQI, pollution, machine learning, health risk, AURA, environmental monitoring" />
     <meta name="author" content="AURA Team" />
+    <meta name="robots" content="index, follow" />
 
-    <!-- Open Graph -->
+    <!-- ── Open Graph ──────────────────────────────────────── -->
     <meta property="og:title" content="AURA — AI Air Quality Intelligence" />
     <meta property="og:description" content="Real-time AQI monitoring with ML-powered health risk predictions and smart pollution control." />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://aura-aqi.netlify.app" />
+    <meta property="og:url" content="https://auraweapp.vercel.app" />
+    <meta property="og:image" content="https://auraweapp.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1024" />
+    <meta property="og:image:height" content="1024" />
+    <meta property="og:site_name" content="AURA Air Quality" />
 
-    <!-- Favicon -->
+    <!-- ── Twitter Card ─────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AURA — AI Air Quality Intelligence" />
+    <meta name="twitter:description" content="Real-time AQI monitoring with ML-powered health risk predictions." />
+    <meta name="twitter:image" content="https://auraweapp.vercel.app/og-image.png" />
+
+    <!-- ── Favicon & Icons ──────────────────────────────────── -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
-    <!-- Fonts -->
+    <!-- ── PWA Manifest ─────────────────────────────────────── -->
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- ── Fonts ────────────────────────────────────────────── -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 
-    <!-- Theme color for mobile browsers -->
-    <meta name="theme-color" content="#0a0a0f" />
+    <!-- ── Theme color for mobile browsers ──────────────────── -->
+    <meta name="theme-color" content="#0A0F1E" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AURA" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+

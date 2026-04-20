@@ -43,6 +43,7 @@ jobs:
           VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+          VITE_ML_API_URL:         ${{ secrets.VITE_ML_API_URL }}
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
@@ -92,6 +93,7 @@ jobs:
           VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+          VITE_ML_API_URL:         ${{ secrets.VITE_ML_API_URL }}
 
       - name: Sync Capacitor
         working-directory: frontend
@@ -171,6 +173,7 @@ jobs:
           VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+          VITE_ML_API_URL:         ${{ secrets.VITE_ML_API_URL }}
 
       - name: Sync Capacitor iOS
         working-directory: frontend

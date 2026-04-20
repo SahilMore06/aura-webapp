@@ -1,31 +1,61 @@
+# ── AURA — Netlify Configuration ─────────────────────────────────────────────
+# Primary:  Vercel (auraweapp.vercel.app)
+# Fallback: THIS file (Netlify)
+# Branch strategy:
+#   main  → production  (aura-air-quality.netlify.app)
+#   dev   → staging     (dev--aura-air-quality.netlify.app)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Production build ──────────────────────────────────────────
 [build]
-  command = "npm run build"
-  publish = "dist"
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
+  command   = "npm run build"
+  publish   = "dist"
+  # Only rebuild if frontend files changed (saves build minutes)
+  ignore    = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- frontend/"
 
 [build.environment]
   NODE_VERSION = "20"
-  NPM_FLAGS = "--legacy-peer-deps"
+  NPM_FLAGS    = "--legacy-peer-deps"
 
-# SPA fallback — all routes serve index.html
+# ── Staging build (dev branch) ────────────────────────────────
+[context.branch-deploy]
+  command = "npm run build"
+
+[context.deploy-preview]
+  command = "npm run build"
+
+# ── SPA fallback — all routes serve index.html ────────────────
 [[redirects]]
-  from = "/*"
-  to   = "/index.html"
+  from   = "/*"
+  to     = "/index.html"
   status = 200
 
-# Long-cache for hashed assets
+# ── Long-cache for hashed Vite assets ─────────────────────────
 [[headers]]
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# No-cache for HTML entry point (always fresh)
+# ── Never cache HTML entry point ──────────────────────────────
 [[headers]]
   for = "/index.html"
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 
-# Security headers on all routes
+# ── Never cache PWA manifest or service worker ────────────────
+[[headers]]
+  for = "/site.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# ── App Links verification file ───────────────────────────────
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type  = "application/json"
+    Cache-Control = "public, max-age=3600"
+
+# ── Security headers on ALL routes ────────────────────────────
 [[headers]]
   for = "/*"
   [headers.values]
@@ -34,3 +64,4 @@
     Referrer-Policy            = "strict-origin-when-cross-origin"
     Permissions-Policy         = "geolocation=(self), camera=(), microphone=()"
     Strict-Transport-Security  = "max-age=63072000; includeSubDomains; preload"
+    X-XSS-Protection           = "1; mode=block"

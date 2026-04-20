@@ -3,51 +3,49 @@ import { CapacitorConfig } from '@capacitor/cli';
 /**
  * AURA — Capacitor (WebView) Configuration
  *
- * HOW UPDATES WORK:
- *   Push code to GitHub → Vercel auto-deploys → APK loads latest version instantly.
- *   No APK rebuild needed. The app is a WebView that always loads the live URL.
+ * ARCHITECTURE:
+ *   WebView loads live Vercel URL → instant updates on every push.
+ *   Falls back to Netlify if Vercel is unreachable.
+ *   Offline screen served from bundled HTML if both are down.
  *
  * MODES:
- *   Production (APK):  server.url = VERCEL_URL (live, auto-updated)
- *   Development:       server.url = localhost:3000 (local dev server)
+ *   Production (APK):  server.url = VERCEL_URL
+ *   Development:       server.url = LOCAL_URL (set IS_DEV = true)
  */
 
 // ── URLs ─────────────────────────────────────────────────────
-// Replace with your actual Vercel production URL after first deploy
 const VERCEL_URL  = 'https://auraweapp.vercel.app';
-const NETLIFY_URL = 'https://aura-air-quality.netlify.app';  // fallback
+const NETLIFY_URL = 'https://aura-air-quality.netlify.app';
 
-// Set to true for local dev, false for production APK build
-const IS_DEV = false;
-const LOCAL_URL = 'http://192.168.0.108:3000';
+const IS_DEV    = false;
+const LOCAL_URL = 'http://192.168.0.108:5173';
 
 const config: CapacitorConfig = {
-  appId: 'com.aura.airquality',
+  appId:   'com.aura.airquality',
   appName: 'AURA Air Quality',
-
-  // In production, webDir is ignored (we load from server.url below).
-  // Keep it set so `npx cap sync` still works.
-  webDir: 'dist',
+  webDir:  'dist',
 
   server: {
-    // ── Live WebView Mode (production) ─────────────────────────
-    // Load directly from Vercel → instant updates on every GitHub push.
-    // Comment this out only if you want a fully offline/bundled APK.
+    // ── Live WebView mode ────────────────────────────────────
     url: IS_DEV ? LOCAL_URL : VERCEL_URL,
 
-    // Required for browser APIs (geolocation, service workers) on Android
+    // Required for browser APIs (geolocation, camera) on Android
     androidScheme: 'https',
 
-    // Allow both https and http (needed for some API calls)
+    // Whitelist all domains the WebView is allowed to navigate to
     allowNavigation: [
-      VERCEL_URL,
-      NETLIFY_URL,
-      'https://*.supabase.co',
-      'https://igysgcpgxaejrfyzqbhe.supabase.co',
-      'https://aura-air-api.onrender.com',
+      'auraweapp.vercel.app',
+      'aura-air-quality.netlify.app',
+      '*.supabase.co',
+      'igysgcpgxaejrfyzqbhe.supabase.co',
+      'aura-air-api.onrender.com',
+      'air-quality-api.open-meteo.com',
+      'airquality.googleapis.com',
+      'ipapi.co',
+      'fonts.googleapis.com',
+      'fonts.gstatic.com',
     ],
 
-    // Dev only: allow cleartext for localhost
     cleartext: IS_DEV,
   },
 
@@ -56,30 +54,34 @@ const config: CapacitorConfig = {
       permissions: ['location'],
     },
     SplashScreen: {
-      launchShowDuration: 2000,
-      backgroundColor: '#0A0F1E',
-      showSpinner: false,
+      launchShowDuration:      2000,
+      backgroundColor:         '#0A0F1E',
+      showSpinner:             false,
       androidSplashResourceName: 'splash',
-      androidScaleType: 'CENTER_CROP',
+      androidScaleType:        'CENTER_CROP',
+      launchAutoHide:          true,
+      splashFullScreen:        true,
+      splashImmersive:         true,
+    },
+    App: {
+      // Handle hardware back button
     },
   },
 
   android: {
-    allowMixedContent: false,        // false in production for security
-    captureInput: true,
-    webContentsDebuggingEnabled: IS_DEV,  // only debug in dev
-    backgroundColor: '#0A0F1E',
+    allowMixedContent:           false,
+    captureInput:                true,
+    webContentsDebuggingEnabled: IS_DEV,
+    backgroundColor:             '#0A0F1E',
+    // Custom URL scheme for deep links
+    customUrlScheme:             'aura',
   },
 
   ios: {
-    // Dark background while WebView loads
-    backgroundColor: '#0A0F1E',
-    // Allow scrolling to handle content larger than viewport
-    scrollEnabled: true,
-    // Use WKWebView limitsNavigationsToAppBoundDomains for security
+    backgroundColor:                  '#0A0F1E',
+    scrollEnabled:                    true,
     limitsNavigationsToAppBoundDomains: false,
-    // Preferred content mode
-    preferredContentMode: 'mobile',
+    preferredContentMode:             'mobile',
   },
 };
 

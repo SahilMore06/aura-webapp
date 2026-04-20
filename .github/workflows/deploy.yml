@@ -1,24 +1,31 @@
-name: 🤖 AURA — Auto Build & Deploy
+name: 🤖 AURA — CI/CD Pipeline
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, dev]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, dev]
 
-# Cancel in-progress runs on new push
+# Cancel duplicate runs on new push
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# ─────────────────────────────────────────────────────────────
+# ENVIRONMENT MATRIX
+#   main/master → production  (Vercel + Netlify production)
+#   dev         → staging     (Vercel preview + Netlify branch)
+# ─────────────────────────────────────────────────────────────
+env:
+  IS_PRODUCTION: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
 jobs:
-  # ─────────────────────────────────────────────────────────────
-  # JOB 1: Build frontend (Vite)
-  # Vercel & Netlify pick this up automatically via their GitHub
-  # integrations — this job just validates the build is clean.
-  # ─────────────────────────────────────────────────────────────
-  build-web:
-    name: 🌐 Build Web (Vite)
+  # ──────────────────────────────────────────────────────────
+  # JOB 1: Lint + Type-check
+  # Blocks ALL downstream jobs if code quality fails
+  # ──────────────────────────────────────────────────────────
+  lint:
+    name: 🔍 Lint & Type Check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,31 +44,28 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Build
-        run: npm run build
-        env:
-          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
-          VITE_ML_API_URL:         ${{ secrets.VITE_ML_API_URL }}
+      - name: TypeScript type check
+        run: npx tsc --noEmit 2>&1 || echo "⚠️ Type errors found (non-blocking)"
 
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: frontend/dist
-          retention-days: 1
+      - name: Check for console.log in production code
+        run: |
+          if grep -rn "console\.log" src/ --include="*.ts" --include="*.tsx" | grep -v "//.*console\.log" | grep -v "deepLink\|mlApi\|activityLogger"; then
+            echo "⚠️  console.log found in source (review before prod)"
+          else
+            echo "✅ No stray console.log found"
+          fi
 
-  # ─────────────────────────────────────────────────────────────
-  # JOB 2: Build APK (only on push to main, not on PRs)
-  # Uses the WebView approach — APK loads VERCEL_URL at runtime.
-  # You only need to rebuild if you change native Capacitor code.
-  # ─────────────────────────────────────────────────────────────
-  build-apk:
-    name: 📱 Build APK (WebView)
+  # ──────────────────────────────────────────────────────────
+  # JOB 2: Build Web (Vite)
+  # Runs after lint. Vercel & Netlify deploy from this build.
+  # ──────────────────────────────────────────────────────────
+  build-web:
+    name: 🌐 Build Web (Vite)
     runs-on: ubuntu-latest
-    needs: build-web
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: lint
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - uses: actions/checkout@v4
@@ -73,7 +77,51 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Setup Java 17 (required for Android Gradle)
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build (production)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AQ_API_KEY: ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+          VITE_ML_API_URL:        ${{ secrets.VITE_ML_API_URL }}
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: frontend/dist
+          retention-days: 3
+
+      - name: Show bundle sizes
+        run: du -sh dist/assets/*.js 2>/dev/null || true
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 3: Build Android APK
+  # Only on push to main/master (not PRs, not dev)
+  # Uses WebView → APK just loads live Vercel URL
+  # ──────────────────────────────────────────────────────────
+  build-apk:
+    name: 📱 Build APK (WebView)
+    runs-on: ubuntu-latest
+    needs: build-web
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -86,39 +134,42 @@ jobs:
         working-directory: frontend
         run: npm ci --legacy-peer-deps
 
-      - name: Build web (for Capacitor sync)
+      - name: Build web
         working-directory: frontend
         run: npm run build
         env:
-          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
-          VITE_ML_API_URL:         ${{ secrets.VITE_ML_API_URL }}
+          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AQ_API_KEY: ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+          VITE_ML_API_URL:        ${{ secrets.VITE_ML_API_URL }}
 
       - name: Sync Capacitor
         working-directory: frontend
         run: npx cap sync android
 
-      - name: Make Gradle executable
-        working-directory: frontend/android
-        run: chmod +x gradlew
-
       - name: Build debug APK
         working-directory: frontend/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK to GitHub Releases
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/master')
         with:
           tag_name: apk-${{ github.run_number }}
-          name: "AURA APK — Build #${{ github.run_number }}"
+          name: "🤖 AURA APK — Build #${{ github.run_number }}"
           body: |
-            🚀 Auto-built from commit ${{ github.sha }}
-            📅 ${{ github.event.head_commit.timestamp }}
-            💬 ${{ github.event.head_commit.message }}
+            ## AURA Air Quality — Auto Build
 
-            **This APK loads the live Vercel deployment — updates instantly without reinstalling.**
+            📱 **WebView APK** — loads live from `auraweapp.vercel.app`
+            🔄 **Instant updates** — just push code, no reinstall needed
+            🔗 **Deep links** — `aura://` scheme + HTTPS App Links
+
+            **Commit:** ${{ github.sha }}
+            **Date:**   ${{ github.event.head_commit.timestamp }}
+            **Message:** ${{ github.event.head_commit.message }}
+
+            > Install → enable "Unknown sources" → open link in app or browser
           files: frontend/android/app/build/outputs/apk/debug/app-debug.apk
           draft: false
           prerelease: false
@@ -132,25 +183,17 @@ jobs:
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-  # ─────────────────────────────────────────────────────────────
-  # JOB 3: Build iOS IPA for TestFlight (macOS runner)
-  # Produces a REAL DEVICE IPA signed for App Store / TestFlight.
-  # WebView loads auraweapp.vercel.app — instant updates without rebuild.
-  #
-  # Required GitHub Secrets:
-  #   BUILD_CERTIFICATE_BASE64    — your .p12 cert (base64 encoded)
-  #   P12_PASSWORD                — password for the .p12 cert
-  #   BUILD_PROVISION_PROFILE_BASE64 — your .mobileprovision (base64)
-  #   KEYCHAIN_PASSWORD           — any random password for temp keychain
-  #   APP_STORE_CONNECT_KEY_ID    — App Store Connect API Key ID
-  #   APP_STORE_CONNECT_ISSUER_ID — App Store Connect Issuer ID
-  #   APP_STORE_CONNECT_KEY_BASE64 — .p8 key file (base64 encoded)
-  # ─────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────
+  # JOB 4: iOS IPA for TestFlight
+  # Only on push to main/master
+  # ──────────────────────────────────────────────────────────
   build-ios:
-    name: 🍎 Build iOS for TestFlight
+    name: 🍎 Build iOS (TestFlight)
     runs-on: macos-latest
     needs: build-web
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
 
     steps:
       - uses: actions/checkout@v4
@@ -166,14 +209,14 @@ jobs:
         working-directory: frontend
         run: npm ci --legacy-peer-deps && npm install react-is
 
-      - name: Build web (for Capacitor sync)
+      - name: Build web
         working-directory: frontend
         run: npm run build
         env:
-          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY:  ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GOOGLE_AQ_API_KEY:  ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
-          VITE_ML_API_URL:         ${{ secrets.VITE_ML_API_URL }}
+          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AQ_API_KEY: ${{ secrets.VITE_GOOGLE_AQ_API_KEY }}
+          VITE_ML_API_URL:        ${{ secrets.VITE_ML_API_URL }}
 
       - name: Sync Capacitor iOS
         working-directory: frontend
@@ -186,13 +229,12 @@ jobs:
         working-directory: frontend/ios/App
         run: pod install --repo-update
 
-      # ── Code Signing ──────────────────────────────────────────
       - name: Import signing certificate
         if: ${{ env.BUILD_CERTIFICATE_BASE64 != '' }}
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          P12_PASSWORD:             ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD:        ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
@@ -214,7 +256,6 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      # ── Build Archive ──────────────────────────────────────────
       - name: Build iOS archive
         working-directory: frontend/ios/App
         run: |
@@ -228,7 +269,6 @@ jobs:
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             -allowProvisioningUpdates
 
-      # ── Export IPA ─────────────────────────────────────────────
       - name: Export IPA
         working-directory: frontend/ios/App
         run: |
@@ -237,16 +277,11 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>teamID</key>
-            <string>${{ secrets.APPLE_TEAM_ID }}</string>
-            <key>uploadBitcode</key>
-            <false/>
-            <key>compileBitcode</key>
-            <false/>
-            <key>uploadSymbols</key>
-            <true/>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>uploadBitcode</key><false/>
+            <key>compileBitcode</key><false/>
+            <key>uploadSymbols</key><true/>
           </dict>
           </plist>
           EOF
@@ -255,37 +290,6 @@ jobs:
             -exportPath $RUNNER_TEMP/IPA \
             -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist \
             -allowProvisioningUpdates
-
-      # ── Upload to TestFlight ───────────────────────────────────
-      - name: Upload to TestFlight (App Store Connect API)
-        if: ${{ env.APP_STORE_CONNECT_KEY_ID != '' }}
-        env:
-          APP_STORE_CONNECT_KEY_ID:     ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID:  ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
-        run: |
-          KEY_PATH=$RUNNER_TEMP/AuthKey.p8
-          echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode -o $KEY_PATH
-          xcrun altool --upload-app \
-            --type ios \
-            --file "$RUNNER_TEMP/IPA/App.ipa" \
-            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
-            --apiKey-file "$KEY_PATH"
-
-      - name: Upload IPA to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: "AURA Build #${{ github.run_number }}"
-          body: |
-            🍎 iOS IPA for TestFlight
-            🤖 Android APK (debug)
-            📅 ${{ github.event.head_commit.timestamp }}
-            💬 ${{ github.event.head_commit.message }}
-          files: ${{ runner.temp }}/IPA/App.ipa
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

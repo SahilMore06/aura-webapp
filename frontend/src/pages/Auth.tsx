@@ -140,8 +140,9 @@ export function Auth() {
         }
 
       } else if (mode === 'forgot') {
+        const SITE_URL = import.meta.env.VITE_SITE_URL || 'https://auraweapp.vercel.app';
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth?mode=reset`,
+          redirectTo: `${SITE_URL}/auth?mode=reset`,
         });
         if (error) throw error;
         setSuccess('Password reset email sent. Check your inbox.');
@@ -157,16 +158,14 @@ export function Auth() {
   // ── OAuth ────────────────────────────────────────────────────
   const handleOAuth = async (provider: 'google' | 'github') => {
     setError(null);
-    // After OAuth, Supabase redirects back to this URL.
-    // If app is installed + App Links verified → OS opens the app directly.
-    // If not → web handles it normally.
-    const redirectUrl = isRunningInApp()
-      ? `${window.location.origin}/dashboard`
-      : `${window.location.origin}/dashboard`;
+    // Always redirect to production URL after OAuth.
+    // If AURA app is installed + App Links verified → Android OS opens it directly.
+    // Otherwise → user lands on the Vercel web dashboard.
+    const SITE_URL = import.meta.env.VITE_SITE_URL || 'https://auraweapp.vercel.app';
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: redirectUrl,
+        redirectTo: `${SITE_URL}/dashboard`,
         scopes: provider === 'github' ? 'user:email' : undefined,
       },
     });

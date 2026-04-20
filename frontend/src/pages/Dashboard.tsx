@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Bell, MapPin, Navigation, RefreshCw, Info, Wind, Droplets, ThermometerSun, Loader2, Shield, Activity, Leaf, CheckCircle, Flame, Factory, Car, AlertTriangle, ShieldAlert, Skull, Sparkles } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { generateDashboardIEEE } from '../utils/ieeeDashboardReport';
+import { fetchCitiesQuality } from '../lib/mlApi';
 
 export function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -19,7 +20,6 @@ export function Dashboard() {
   const [locationStatus, setLocationStatus] = useState<'detecting' | 'granted' | 'denied' | 'ip'>('detecting');
 
   const GOOGLE_AQ_KEY = import.meta.env.VITE_GOOGLE_AQ_API_KEY as string;
-  const ML_API_URL = (import.meta.env.VITE_ML_API_URL as string) || 'https://aura-air-api.onrender.com';
 
   const fetchData = async (lat: number, lon: number) => {
     setCoords({ lat, lon });
@@ -151,11 +151,21 @@ export function Dashboard() {
   };
 
   useEffect(() => {
-    // Fetch categorized cities silently
-    fetch(`${ML_API_URL}/cities/quality`)
-      .then(res => res.json())
-      .then(json => setMlCities(json.quality_groups))
-      .catch(err => console.error('Failed to load ML Cities', err));
+    // Fetch categorized cities via ML API client (with retry + fallback)
+    fetchCitiesQuality()
+      .then(cities => {
+        if (cities.length > 0) {
+          // Group by quality band if API returns flat array
+          const grouped = cities.reduce((acc: any, c: any) => {
+            const band = c.category || 'Good';
+            acc[band] = acc[band] || [];
+            acc[band].push({ city: c.city, country: c.country || 'India', avg_aqi: c.aqi, dominant_pollutant: c.dominant_pollutant });
+            return acc;
+          }, {});
+          setMlCities(grouped);
+        }
+      })
+      .catch(err => console.warn('[Dashboard] ML Cities unavailable', err));
   }, []);
 
   // ── IP-based geolocation fallback (works on HTTP / when GPS is denied) ──

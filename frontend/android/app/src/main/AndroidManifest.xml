@@ -9,7 +9,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
@@ -19,9 +19,51 @@
             android:launchMode="singleTask"
             android:exported="true">
 
+            <!-- ── Standard launcher ───────────────────────────── -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- ── Custom URI deep link: aura://  ─────────────── -->
+            <!-- Handles: aura://dashboard, aura://auth, aura://reset-password -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="aura" />
+            </intent-filter>
+
+            <!-- ── HTTPS App Links: Vercel (primary) ──────────── -->
+            <!-- autoVerify=true = no dialog, opens app directly like WhatsApp -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="auraweapp.vercel.app" />
+            </intent-filter>
+
+            <!-- ── HTTPS App Links: Netlify (fallback) ────────── -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="aura-air-quality.netlify.app" />
+            </intent-filter>
+
+            <!-- ── Supabase OAuth callback (password reset / email confirm) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="igysgcpgxaejrfyzqbhe.supabase.co"
+                    android:pathPrefix="/auth/v1/callback" />
             </intent-filter>
 
         </activity>
@@ -45,4 +87,5 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
 </manifest>
+
 

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.aura.airquality",
+      "sha256_cert_fingerprints": [
+        "8C:DC:AF:82:3F:40:03:91:F0:48:48:69:DC:AF:26:F0:B9:92:7F:93:FF:C9:B8:36:9E:24:3C:1E:8C:7A:43:84"
+      ]
+    }
+  }
+]

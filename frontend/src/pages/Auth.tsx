@@ -11,6 +11,7 @@ import { Mail, Lock, Github, Chrome, AlertCircle, Eye, EyeOff, ArrowLeft, User, 
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { activityLogger } from '../lib/activityLogger';
+import { redirectAfterLogin, isRunningInApp } from '../lib/deepLink';
 
 // ── Human-readable error map ──────────────────────────────────
 const ERROR_MAP: Record<string, string> = {
@@ -98,8 +99,15 @@ export function Auth() {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         activityLogger.log('login', { metadata: { method: 'email' } });
-        // loadProfile is triggered by the auth state change in App.tsx
-        navigate('/dashboard');
+        // If running in WebView app → stay in app (already there)
+        // If on web browser → try to open native app, fallback to /dashboard
+        if (isRunningInApp()) {
+          navigate('/dashboard');
+        } else {
+          redirectAfterLogin();
+          // Small delay so deep link fires before navigation
+          setTimeout(() => navigate('/dashboard'), 300);
+        }
 
       } else if (mode === 'signup') {
         if (password.length < 6) {
@@ -120,7 +128,12 @@ export function Auth() {
         if (data.session) {
           // Email confirmations disabled — user is immediately active → OTP verify
           activityLogger.log('signup', { metadata: { method: 'email', display_name: displayName } });
-          navigate(`/verify-otp?purpose=signup_verify&email=${encodeURIComponent(email)}`);
+          if (isRunningInApp()) {
+            navigate(`/verify-otp?purpose=signup_verify&email=${encodeURIComponent(email)}`);
+          } else {
+            redirectAfterLogin();
+            setTimeout(() => navigate(`/verify-otp?purpose=signup_verify&email=${encodeURIComponent(email)}`), 300);
+          }
         } else {
           // Email confirmation required via Supabase link
           setSuccess('Check your inbox! We sent you a confirmation link.');
@@ -144,10 +157,16 @@ export function Auth() {
   // ── OAuth ────────────────────────────────────────────────────
   const handleOAuth = async (provider: 'google' | 'github') => {
     setError(null);
+    // After OAuth, Supabase redirects back to this URL.
+    // If app is installed + App Links verified → OS opens the app directly.
+    // If not → web handles it normally.
+    const redirectUrl = isRunningInApp()
+      ? `${window.location.origin}/dashboard`
+      : `${window.location.origin}/dashboard`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: redirectUrl,
         scopes: provider === 'github' ? 'user:email' : undefined,
       },
     });
